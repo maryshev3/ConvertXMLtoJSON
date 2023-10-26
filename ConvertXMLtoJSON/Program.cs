@@ -19,92 +19,144 @@ string GetPropertyId(string line)
     return line.Substring(line.IndexOf('\"') + 1, line.LastIndexOf('\"') - line.IndexOf('\"') - 1);
 }
 
+string GetAttribute(StreamReader sr) 
+{
+    bool isEndedAttribute = false;
+
+    string Attribute = "";
+    char StartChar = (char)sr.Read();
+
+    while (StartChar != '<')
+        StartChar = (char)sr.Read();
+
+    Attribute += StartChar;
+
+    while (!isEndedAttribute)
+    {
+        StartChar = (char)sr.Read();
+
+        while (StartChar != '>')
+        {
+            Attribute += StartChar;
+
+            StartChar = (char)sr.Read();
+
+            if (StartChar == '/')
+                isEndedAttribute = true;
+        }
+
+        if (!Attribute.Contains("IdentifiedObject.name"))
+            isEndedAttribute = true;
+
+        Attribute += StartChar;
+    }
+
+    return Attribute;
+}
+
+AttributesType GetTypeAttribute(string Attribute) 
+{
+    if (Attribute.Contains("Substation"))
+        return AttributesType.Substation;
+    if (Attribute.Contains("VoltageLevel"))
+        return AttributesType.VoltageLevels;
+    if (Attribute.Contains("SynchronousMachine"))
+        return AttributesType.Synchronisation;
+
+    return AttributesType.Any;
+}
+
 while (!sr.EndOfStream) 
 {
-    string line = sr.ReadLine();
+    string line = GetAttribute(sr);
 
-    //Значит имеет дело с подстанцией, которую надо добавить в словарь Substations
-    if (line.Contains("<cim:Substation rdf:about")) 
-    {
-        string idSubstation = GetPropertyId(line);
-
-        Substation substation = new Substation();
-
-        //Ищем имя подстанции
-        while (!line.Contains("<cim:IdentifiedObject.name>"))
-            line = sr.ReadLine();
-
-        substation.Name = GetPropertyName(line);
-
-        Substations.Add(idSubstation, substation);
-    }
-    else 
-    {
-        //Имеем дело с распределительным устройством
-        if (line.Contains("<cim:VoltageLevel rdf:about")) 
+    if (line.Contains("rdf:about"))
+        switch (GetTypeAttribute(line)) 
         {
-            string idVoltageLevel = GetPropertyId(line);
+            case AttributesType.Substation: 
+                {
+                    string idSubstation = GetPropertyId(line);
 
-            VoltageLevel voltageLevel = new VoltageLevel();
+                    Substation substation = new Substation();
 
-            string idSubstation = "";
+                    //Ищем имя подстанции
+                    while (!line.Contains("IdentifiedObject.name"))
+                        line = GetAttribute(sr);
 
-            //Ищем имя распределительного устройства или id подстанции
-            while (!line.Contains("<cim:IdentifiedObject.name>") && !line.Contains("<cim:VoltageLevel.Substation"))
-                line = sr.ReadLine();
-            if (line.Contains("<cim:IdentifiedObject.name>"))
-                voltageLevel.Name = GetPropertyName(line);
-            else
-                idSubstation = GetPropertyId(line);
+                    substation.Name = GetPropertyName(line);
 
-            line = sr.ReadLine();
+                    bool isHave = false;
+                    foreach (var st in Substations)
+                        if (st.Value.Name == substation.Name)
+                        {
+                            isHave = true;
+                            break;
+                        }
 
-            while (!line.Contains("<cim:IdentifiedObject.name>") && !line.Contains("<cim:VoltageLevel.Substation"))
-                line = sr.ReadLine();
-            if (line.Contains("<cim:IdentifiedObject.name>"))
-                voltageLevel.Name = GetPropertyName(line);
-            else
-                idSubstation = GetPropertyId(line);
+                    if (!isHave)
+                        Substations.Add(idSubstation, substation);
+                } break;
 
-            VoltageLevelsWithIdSubstation vl = new VoltageLevelsWithIdSubstation();
-            vl.IdSubstation = idSubstation;
-            vl.voltageLevel = voltageLevel;
+            case AttributesType.VoltageLevels:
+                {
+                    string idVoltageLevel = GetPropertyId(line);
 
-            VoltageLevels.Add(idVoltageLevel, vl);
+                    VoltageLevel voltageLevel = new VoltageLevel();
+
+                    string idSubstation = "";
+
+                    //Ищем имя распределительного устройства или id подстанции
+                    for (int i = 0; i < 2; i++)
+                    {
+                        while (!line.Contains("IdentifiedObject.name") && !line.Contains("VoltageLevel.Substation"))
+                            line = GetAttribute(sr);
+                        if (line.Contains("IdentifiedObject.name"))
+                            voltageLevel.Name = GetPropertyName(line);
+                        else
+                            idSubstation = GetPropertyId(line);
+
+                         if (i == 0)
+                            line = GetAttribute(sr);
+                    }
+
+                    VoltageLevelsWithIdSubstation vl = new VoltageLevelsWithIdSubstation();
+                    vl.IdSubstation = idSubstation;
+                    vl.voltageLevel = voltageLevel;
+
+                    VoltageLevels.Add(idVoltageLevel, vl);
+                } break;
+
+            case AttributesType.Synchronisation:
+                {
+                    string idVoltageLevel = "";
+                    string MachineName = "";
+
+                    //Ищем имя генератора или id подстанции
+                    for (int i = 0; i < 2; i++)
+                    {
+                        while (!line.Contains("IdentifiedObject.name>") && !line.Contains("Equipment.EquipmentContainer"))
+                            line = GetAttribute(sr);
+                        if (line.Contains("IdentifiedObject.name>"))
+                            MachineName = GetPropertyName(line);
+                        else
+                            idVoltageLevel = GetPropertyId(line);
+
+                        if (i == 0)
+                            line = GetAttribute(sr);
+                    }
+
+                    SynchronousMachineWithIdVoltageLevel synchronousMachineWithIdVoltageLevel = new SynchronousMachineWithIdVoltageLevel();
+                    synchronousMachineWithIdVoltageLevel.SynchronousMachineName = MachineName;
+                    synchronousMachineWithIdVoltageLevel.IdVoltageLevel = idVoltageLevel;
+
+                    SynchronousMachines.Add(synchronousMachineWithIdVoltageLevel);
+                } break;
+
+            case AttributesType.Any:
+                { 
+
+                } break;
         }
-        else 
-        {
-            //Имеем дело с генератором
-            if (line.Contains("cim:SynchronousMachine rdf:about"))
-            {
-                string idVoltageLevel = "";
-                string MachineName = "";
-
-                //Ищем имя генератора или id подстанции
-                while (!line.Contains("<cim:IdentifiedObject.name>") && !line.Contains("<cim:Equipment.EquipmentContainer rdf:resource"))
-                    line = sr.ReadLine();
-                if (line.Contains("<cim:IdentifiedObject.name>"))
-                    MachineName = GetPropertyName(line);
-                else
-                    idVoltageLevel = GetPropertyId(line);
-
-                line = sr.ReadLine();
-
-                while (!line.Contains("<cim:IdentifiedObject.name>") && !line.Contains("<cim:Equipment.EquipmentContainer rdf:resource"))
-                    line = sr.ReadLine();
-                if (line.Contains("<cim:IdentifiedObject.name>"))
-                    MachineName = GetPropertyName(line);
-                else
-                    idVoltageLevel = GetPropertyId(line);
-
-                SynchronousMachineWithIdVoltageLevel synchronousMachineWithIdVoltageLevel = new SynchronousMachineWithIdVoltageLevel();
-                synchronousMachineWithIdVoltageLevel.SynchronousMachineName = MachineName;
-                synchronousMachineWithIdVoltageLevel.IdVoltageLevel = idVoltageLevel;
-
-                SynchronousMachines.Add(synchronousMachineWithIdVoltageLevel);
-            }
-        }
-    }
 }
 
 sr.Close();
@@ -112,16 +164,22 @@ sr.Close();
 //Добавляются на этом этапе, а не в основном ввиду того, что подстанции и генераторы могут быть объявлены раньше объектов, в которые вложены
 foreach (var vl in VoltageLevels) 
 {
-    Substations[vl.Value.IdSubstation].VoltageLevel = vl.Value.voltageLevel;
+    if (Substations.ContainsKey(vl.Value.IdSubstation))
+        Substations[vl.Value.IdSubstation].VoltageLevel = vl.Value.voltageLevel;
 }
 
 foreach (var sm in SynchronousMachines) 
 {
     foreach (var substation in Substations)
     {
-        if (substation.Value.VoltageLevel != null)
-            if (substation.Value.VoltageLevel.Name == VoltageLevels[sm.IdVoltageLevel].voltageLevel.Name)
-                substation.Value.VoltageLevel.Generators.Add(sm.SynchronousMachineName);
+        try
+        {
+            if (substation.Value.VoltageLevel != null)
+                if (substation.Value.VoltageLevel.Name == VoltageLevels[sm.IdVoltageLevel].voltageLevel.Name)
+                    if (!substation.Value.VoltageLevel.Generators.Contains(sm.SynchronousMachineName))
+                        substation.Value.VoltageLevel.Generators.Add(sm.SynchronousMachineName);
+        }
+        catch { }
     }
 }
 
