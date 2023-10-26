@@ -7,7 +7,7 @@ Dictionary<string, VoltageLevelsWithIdSubstation> VoltageLevels = new Dictionary
 List<SynchronousMachineWithIdVoltageLevel> SynchronousMachines = new List<SynchronousMachineWithIdVoltageLevel>();
 
 
-StreamReader sr = new StreamReader("Example.xml");
+StreamReader sr = new StreamReader("../../../Example.xml");
 
 string GetPropertyName(string line) 
 {
